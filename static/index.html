@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Heating · Claude</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --card-2: #222631;
+    --line: #2b3040;
+    --text: #e7e9ee;
+    --muted: #9aa0ac;
+    --accent: #ff7a45;
+    --cool: #4aa3ff;
+    --ok: #37c98b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+
+  .zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .zone {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .zone .name { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3f4d; flex: none; }
+  .zone.heating .dot { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .temps { display: flex; align-items: baseline; gap: 10px; }
+  .cur { font-size: 30px; font-weight: 640; letter-spacing: -0.02em; }
+  .cur span { font-size: 15px; color: var(--muted); font-weight: 500; }
+  .tgt { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .tgt b { color: var(--text); font-weight: 600; }
+  .badges { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; }
+  .badge {
+    font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge.hold { background: rgba(74,163,255,.15); color: var(--cool); }
+  .badge.standby { background: rgba(167,139,250,.16); color: #c4b5fd; }
+  .badge.away { background: rgba(154,160,172,.15); color: var(--muted); }
+
+  .chat { margin-top: 28px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; }
+  .log { padding: 18px; max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 80%; padding: 10px 13px; border-radius: 13px; white-space: pre-wrap; }
+  .msg.me { align-self: flex-end; background: var(--accent); color: #1a0d06; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--card-2); border-bottom-left-radius: 4px; }
+  .msg.err { align-self: flex-start; background: rgba(255,90,90,.15); color: #ff9a9a; }
+  .hint { color: var(--muted); font-size: 13px; padding: 0 18px 6px; }
+  form { display: flex; gap: 10px; padding: 14px 18px 18px; border-top: 1px solid var(--line); }
+  input {
+    flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+    border-radius: 11px; padding: 12px 14px; font-size: 15px; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    background: var(--accent); color: #1a0d06; border: 0; border-radius: 11px;
+    padding: 0 18px; font-weight: 650; font-size: 15px; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Heating</h1>
+      <div class="sub">Heatmiser Neo · natural-language control</div>
+    </div>
+    <div class="sub" id="clock"></div>
+  </header>
+
+  <div class="zones" id="zones"></div>
+
+  <div class="chat">
+    <div class="log" id="log">
+      <div class="msg bot">Hi - tell me what you'd like. Try "make the lounge a bit warmer" or "set everywhere to 20 for 2 hours".</div>
+    </div>
+    <div class="hint" id="hint" style="display:none"></div>
+    <form id="form">
+      <input id="input" autocomplete="off" placeholder="e.g. warm up the bedroom before bed" />
+      <button id="send" type="submit">Send</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function renderZones(zones) {
+  $("zones").innerHTML = zones.map(z => `
+    <div class="zone ${z.heating ? "heating" : ""}">
+      ${z.hold ? '<span class="badge hold">Hold</span>' : ""}
+      ${z.away ? '<span class="badge away">Away</span>' : ""}
+      <div class="name"><span class="dot"></span>${z.name}</div>
+      <div class="temps"><div class="cur">${z.current.toFixed(1)}<span>°C</span></div></div>
+      <div class="tgt">Target <b>${z.target.toFixed(1)}°C</b></div>
+    </div>`).join("");
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/zones");
+    const d = await r.json();
+    renderZones(d.zones);
+  } catch (e) { /* keep last render */ }
+}
+
+function addMsg(text, cls) {
+  const el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.textContent = text;
+  $("log").appendChild(el);
+  $("log").scrollTop = $("log").scrollHeight;
+  return el;
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("input").value.trim();
+  if (!text) return;
+  $("input").value = "";
+  addMsg(text, "me");
+  $("send").disabled = true;
+  const thinking = addMsg("…", "bot");
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "request failed");
+    thinking.textContent = d.reply;
+    if (d.zones) renderZones(d.zones);
+  } catch (err) {
+    thinking.remove();
+    addMsg("Error: " + err.message, "err");
+  } finally {
+    $("send").disabled = false;
+    $("input").focus();
+  }
+});
+
+function tick() {
+  const now = new Date();
+  $("clock").textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+refresh();
+setInterval(refresh, 5000);
+tick();
+setInterval(tick, 30000);
+</script>
+</body>
+</html>
