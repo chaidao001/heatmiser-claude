@@ -1,0 +1,9 @@
+# Secrets - never commit
+conf/creds.ini
+conf/
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
