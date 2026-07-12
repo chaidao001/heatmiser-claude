@@ -39,12 +39,18 @@
   }
   .zone .name { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3f4d; flex: none; }
-  .zone.heating .dot { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .zone.active.heating .dot { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .zone.active.cooling .dot { background: var(--cool); box-shadow: 0 0 10px var(--cool); }
+  .zone.active.vent .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
   .temps { display: flex; align-items: baseline; gap: 10px; }
   .cur { font-size: 30px; font-weight: 640; letter-spacing: -0.02em; }
   .cur span { font-size: 15px; color: var(--muted); font-weight: 500; }
   .tgt { color: var(--muted); font-size: 13px; margin-top: 6px; }
   .tgt b { color: var(--text); font-weight: 600; }
+  .meta { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+          display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .meta .row { display: flex; justify-content: space-between; gap: 8px; }
+  .meta b { color: var(--text); font-weight: 600; }
   .badges { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; }
   .badge {
     font-size: 11px; font-weight: 600;
@@ -102,14 +108,27 @@
 const $ = (id) => document.getElementById(id);
 
 function renderZones(zones) {
-  $("zones").innerHTML = zones.map(z => `
-    <div class="zone ${z.heating ? "heating" : ""}">
-      ${z.hold ? '<span class="badge hold">Hold</span>' : ""}
-      ${z.away ? '<span class="badge away">Away</span>' : ""}
+  $("zones").innerHTML = zones.map(z => {
+    const off = z.standby;
+    const fan = z.fan ? (z.fan + (z.fan_auto ? " · Auto" : "")) : "—";
+    const target = off ? "Off" : z.target.toFixed(1) + "°C";
+    return `
+    <div class="zone ${z.active ? "active" : ""} ${(z.mode || "").toLowerCase()}">
+      <div class="badges">
+        ${z.hold ? '<span class="badge hold">Hold</span>' : ""}
+        ${z.standby ? '<span class="badge standby">Standby</span>' : ""}
+        ${z.away ? '<span class="badge away">Away</span>' : ""}
+      </div>
       <div class="name"><span class="dot"></span>${z.name}</div>
       <div class="temps"><div class="cur">${z.current.toFixed(1)}<span>°C</span></div></div>
-      <div class="tgt">Target <b>${z.target.toFixed(1)}°C</b></div>
-    </div>`).join("");
+      <div class="tgt">Target <b>${target}</b></div>
+      <div class="meta">
+        <div class="row"><span>Mode</span><b>${z.mode || "—"}</b></div>
+        <div class="row"><span>Fan</span><b>${fan}</b></div>
+        <div class="row"><span>Schedule</span><b>${z.schedule || "—"}</b></div>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 async function refresh() {

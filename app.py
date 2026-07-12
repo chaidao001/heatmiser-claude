@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from neohub import make_backend
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / "conf" / ".env")
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 STATIC = Path(__file__).parent / "static"
@@ -69,6 +69,9 @@ Guidelines:
   "cooler" = target - ~1.5C, "cosy/comfortable" ~= 21C, "cold/eco" ~= 17C.
 - Temperatures are in degrees Celsius. Keep targets within a safe 5-30C range.
 - When the user names a room, match it to a zone; "everywhere"/"the house" means all zones.
+- Zones report a `mode` (Heating / Cooling / Vent), a `fan` level, and a `schedule`.
+  A zone in `standby` is effectively Off - describe it that way rather than quoting its
+  target. Refer to the system as heating or cooling according to the zone's mode.
 - After acting, reply in one or two short, friendly sentences stating what you changed
   and the new target(s). Do not invent zones or values you did not get from a tool.
 """

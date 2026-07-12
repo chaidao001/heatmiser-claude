@@ -26,8 +26,9 @@ cd heatmiser-claude
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env
-# edit .env: set ANTHROPIC_API_KEY. Leave NEOHUB_MOCK=1 to use fake zones.
+cp conf/.env.example conf/.env
+# edit conf/.env: set NEOHUB_HOST etc. Leave NEOHUB_MOCK=1 to use fake zones.
+# (ANTHROPIC_API_KEY comes from your environment; the NeoHub token from conf/creds.ini.)
 
 python app.py          # serves on http://127.0.0.1:8765 by default
 ```

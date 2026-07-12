@@ -18,8 +18,13 @@ class Zone:
     target: float           # set/target temperature, degrees C
     heating: bool           # is the zone currently calling for heat
     hold: bool = False       # a temporary hold is active
-    standby: bool = False    # per-zone standby / frost-protection mode
+    standby: bool = False    # per-zone standby / frost-protection mode (shown as Off)
     away: bool = False       # hub-wide away mode
+    active: bool = False     # currently calling for heat or cool
+    mode: str = "Heating"    # Heating / Cooling / Vent
+    fan: str = ""            # fan speed (Off/Low/Med/High), blank if not applicable
+    fan_auto: bool = False   # fan speed chosen automatically
+    schedule: str = "Manual"  # active profile name, or "Manual" when none
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -79,8 +84,7 @@ class MockBackend(BaseBackend):
         for z in self._zones:
             if z.standby:
                 z.heating = z.current < 7.0
-                continue
-            if z.current < z.target - 0.1:
+            elif z.current < z.target - 0.1:
                 z.current = round(z.current + 0.2, 1)
                 z.heating = True
             elif z.current > z.target + 0.1:
@@ -88,6 +92,7 @@ class MockBackend(BaseBackend):
                 z.heating = False
             else:
                 z.heating = False
+            z.active = z.heating
         return list(self._zones)
 
     async def set_temperature(self, zones, target: float) -> list[str]:
@@ -141,6 +146,11 @@ class NeoHubBackend(BaseBackend):
 
     @staticmethod
     def _to_zone(t) -> Zone:
+        hc = str(getattr(t, "hc_mode", "") or "").upper()
+        mode = {"COOLING": "Cooling", "HEATING": "Heating", "VENT": "Vent"}.get(
+            hc, hc.title() or "Heating"
+        )
+        profile = getattr(t, "active_profile", 0) or 0
         return Zone(
             name=t.name,
             current=float(getattr(t, "temperature", 0) or 0),
@@ -149,6 +159,11 @@ class NeoHubBackend(BaseBackend):
             hold=bool(getattr(t, "hold_on", False)),
             standby=bool(getattr(t, "standby", False)),
             away=bool(getattr(t, "away", False)),
+            active=bool(getattr(t, "heat_on", False) or getattr(t, "cool_on", False)),
+            mode=mode,
+            fan=str(getattr(t, "fan_speed", "") or ""),
+            fan_auto=str(getattr(t, "fan_control", "")).lower().startswith("auto"),
+            schedule="Manual" if not profile else f"Profile {profile}",
         )
 
     async def list_zones(self) -> list[Zone]:

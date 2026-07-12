@@ -1,9 +1,11 @@
-# Secrets - never commit
+# Secrets / local config - never commit
 conf/creds.ini
-conf/
-.env
+conf/.env
 
 # Python
 .venv/
 __pycache__/
 *.pyc
+
+# IDE
+.idea/
