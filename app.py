@@ -22,40 +22,10 @@ load_dotenv(Path(__file__).parent / "conf" / ".env")
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 STATIC = Path(__file__).parent / "static"
-CREDS = Path(__file__).parent / "conf" / "creds.ini"
-
-
-def load_cred(name: str) -> str | None:
-    """Read a named secret from conf/creds.ini at runtime.
-
-    The file is gitignored and is read only by this process - never printed or
-    logged. Handles an INI file with or without a section header.
-    """
-    if not CREDS.exists():
-        return None
-    import configparser
-
-    parser = configparser.ConfigParser()
-    text = CREDS.read_text()
-    try:
-        parser.read_string(text)
-    except configparser.MissingSectionHeaderError:
-        parser.read_string("[default]\n" + text)
-    for section in parser.sections():
-        if parser.has_option(section, name):
-            value = parser.get(section, name).strip().strip('"').strip("'")
-            if value:
-                return value
-    return None
-
-
-# The NeoHub token lives in conf/creds.ini under API_KEY. Promote it to the env
-# var make_backend() reads, unless one is already set explicitly.
-_neohub_token = load_cred("API_KEY")
-if _neohub_token and not os.getenv("NEOHUB_TOKEN"):
-    os.environ["NEOHUB_TOKEN"] = _neohub_token
 
 app = FastAPI(title="Heatmiser + Claude")
+# make_backend() reads NEOHUB_TOKEN (and host/port) from the environment, which
+# load_dotenv populated from conf/.env.
 backend = make_backend()
 
 # Claude authenticates with ANTHROPIC_API_KEY from the environment.

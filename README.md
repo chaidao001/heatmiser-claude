@@ -28,7 +28,7 @@ pip install -r requirements.txt
 
 cp conf/.env.example conf/.env
 # edit conf/.env: set NEOHUB_HOST etc. Leave NEOHUB_MOCK=1 to use fake zones.
-# (ANTHROPIC_API_KEY comes from your environment; the NeoHub token from conf/creds.ini.)
+# (ANTHROPIC_API_KEY comes from your environment; the NeoHub token is NEOHUB_TOKEN in conf/.env.)
 
 python app.py          # serves on http://127.0.0.1:8765 by default
 ```
