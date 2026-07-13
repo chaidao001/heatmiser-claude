@@ -57,4 +57,3 @@ heating commands (only the language understanding calls Claude).
 - Safety clamp: targets are limited to 5-30 °C in `app.py`.
 - Model is set by `CLAUDE_MODEL` (default `claude-sonnet-4-6`) - a good latency/cost fit
   for this short tool loop.
-# heatmiser-claude
