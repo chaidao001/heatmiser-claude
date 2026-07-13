@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
@@ -42,6 +43,9 @@ Guidelines:
 - Zones report a `mode` (Heating / Cooling / Vent), a `fan` level, and a `schedule`.
   A zone in `standby` is effectively Off - describe it that way rather than quoting its
   target. Refer to the system as heating or cooling according to the zone's mode.
+- You can also change fan speed (set_fan_speed: Auto/High/Medium/Low/Off), heating/cooling
+  mode (set_mode: Heating/Cooling/Vent/Auto), and turn a zone's schedule on or off
+  (set_schedule). Editing the schedule's times/temperatures is not supported.
 - After acting, reply in one or two short, friendly sentences stating what you changed
   and the new target(s). Do not invent zones or values you did not get from a tool.
 """
@@ -96,6 +100,43 @@ TOOLS = [
             "required": ["zones", "enable"],
         },
     },
+    {
+        "name": "set_fan_speed",
+        "description": "Set the fan speed for one or more zones (cooling / HVAC fan-coil units).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zones": {"type": "array", "items": {"type": "string"}},
+                "speed": {"type": "string", "enum": ["Auto", "High", "Medium", "Low", "Off"]},
+            },
+            "required": ["zones", "speed"],
+        },
+    },
+    {
+        "name": "set_mode",
+        "description": "Set a zone's heating/cooling mode.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zones": {"type": "array", "items": {"type": "string"}},
+                "mode": {"type": "string", "enum": ["Heating", "Cooling", "Vent", "Auto"]},
+            },
+            "required": ["zones", "mode"],
+        },
+    },
+    {
+        "name": "set_schedule",
+        "description": "Turn a zone's time schedule on (follow its program) or off (manual). "
+        "Editing the schedule's times/temperatures is not supported - only on/off.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zones": {"type": "array", "items": {"type": "string"}},
+                "enable": {"type": "boolean"},
+            },
+            "required": ["zones", "enable"],
+        },
+    },
 ]
 
 
@@ -116,6 +157,15 @@ async def dispatch(name: str, args: dict) -> dict:
     if name == "set_away":
         changed = await backend.set_away(args["zones"], bool(args["enable"]))
         return {"changed": changed, "away": bool(args["enable"])}
+    if name == "set_fan_speed":
+        changed = await backend.set_fan(args["zones"], str(args["speed"]))
+        return {"changed": changed, "fan": args["speed"]}
+    if name == "set_mode":
+        changed = await backend.set_mode(args["zones"], str(args["mode"]))
+        return {"changed": changed, "mode": args["mode"]}
+    if name == "set_schedule":
+        changed = await backend.set_schedule(args["zones"], bool(args["enable"]))
+        return {"changed": changed, "schedule_on": bool(args["enable"])}
     return {"error": f"unknown tool {name}"}
 
 
@@ -126,6 +176,34 @@ class ChatIn(BaseModel):
 @app.get("/api/zones")
 async def get_zones():
     return {"zones": [z.as_dict() for z in await backend.list_zones()]}
+
+
+class SetIn(BaseModel):
+    action: str
+    zone: str
+    value: Any = None
+
+
+@app.post("/api/set")
+async def set_control(body: SetIn):
+    """Direct control from the dashboard widgets - one zone, one property."""
+    zones = [body.zone]
+    try:
+        if body.action == "target":
+            await backend.set_temperature(zones, max(5.0, min(30.0, float(body.value))))
+        elif body.action == "mode":
+            await backend.set_mode(zones, str(body.value))
+        elif body.action == "fan":
+            await backend.set_fan(zones, str(body.value))
+        elif body.action == "away":
+            await backend.set_away(zones, bool(body.value))
+        elif body.action == "schedule":
+            await backend.set_schedule(zones, bool(body.value))
+        else:
+            return {"ok": False, "error": f"unknown action {body.action}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "zones": [z.as_dict() for z in await backend.list_zones()]}
 
 
 @app.post("/api/chat")
@@ -150,7 +228,10 @@ async def chat(body: ChatIn):
         tool_results = []
         for block in resp.content:
             if block.type == "tool_use":
-                result = await dispatch(block.name, dict(block.input))
+                try:
+                    result = await dispatch(block.name, dict(block.input))
+                except Exception as e:  # surface tool failures to Claude, not as success
+                    result = {"error": str(e)}
                 if block.name != "list_zones":
                     actions.append({"tool": block.name, "input": block.input, "result": result})
                 tool_results.append(

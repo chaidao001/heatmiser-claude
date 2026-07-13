@@ -5,8 +5,6 @@ powered by the **Claude API**.
 Say "make the lounge warmer" or "set everywhere to 20 for two hours" and Claude translates
 it into structured commands against your **NeoHub**.
 
-![zones + chat](docs/screenshot.png)
-
 ## How it works
 
 ```

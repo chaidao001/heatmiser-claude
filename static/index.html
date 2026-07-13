@@ -51,6 +51,30 @@
           display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
   .meta .row { display: flex; justify-content: space-between; gap: 8px; }
   .meta b { color: var(--text); font-weight: 600; }
+  .sched { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+           font-size: 12px; color: var(--muted); }
+  .sched-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+                color: var(--text); font-weight: 600; }
+  .sched-head .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
+  .sched-head .tag.on { color: var(--ok); border-color: rgba(55,201,139,.4); }
+  .sched .row { display: flex; justify-content: space-between; }
+  .sched b { color: var(--text); font-weight: 600; }
+  .sched .none { font-style: italic; }
+  .stepper { display: inline-flex; align-items: center; gap: 8px; }
+  .step { background: var(--card-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; width: 24px; height: 24px; padding: 0; font-size: 16px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .step:hover { border-color: var(--muted); }
+  .meta label.row { align-items: center; }
+  select.ctl { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 3px 6px; font-size: 12px; font-weight: 600; outline: none; cursor: pointer; }
+  select.ctl:focus { border-color: var(--accent); }
+  .fanwrap { display: inline-flex; align-items: center; gap: 8px; }
+  .fan-mode { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
+    padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .fan-mode.auto { color: var(--ok); border-color: rgba(55,201,139,.4); }
+  .fan-mode.man { color: var(--accent); border-color: rgba(255,122,69,.4); }
   .badges { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; }
   .badge {
     font-size: 11px; font-weight: 600;
@@ -78,21 +102,57 @@
     padding: 0 18px; font-weight: 650; font-size: 15px; cursor: pointer;
   }
   button:disabled { opacity: .5; cursor: default; }
+
+  .chat-head { display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px 0; font-size: 13px; color: var(--muted); }
+  .btn-clear {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 9px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+  }
+  .btn-clear:hover { color: var(--text); border-color: var(--muted); }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .btn-standby { background: rgba(167,139,250,.16); color: #c4b5fd;
+    border: 1px solid rgba(167,139,250,.35); border-radius: 10px;
+    padding: 7px 14px; font-size: 13px; font-weight: 650; }
+  .btn-standby:hover { border-color: #c4b5fd; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal-overlay[hidden] { display: none; }
+  .modal { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 22px; max-width: 340px; width: calc(100% - 40px); }
+  .modal-msg { font-size: 15px; margin-bottom: 18px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 14px; font-weight: 600; }
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+  .btn-danger { background: rgba(167,139,250,.16); color: #c4b5fd;
+    border: 1px solid rgba(167,139,250,.4); border-radius: 10px; padding: 8px 14px; font-weight: 650; }
+  .btn-danger:hover { border-color: #c4b5fd; }
+  .msg strong { font-weight: 700; }
+  .msg code { background: rgba(255,255,255,.10); padding: 1px 5px; border-radius: 5px;
+    font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .msg ul { margin: 6px 0; padding-left: 18px; }
+  .msg li { margin: 2px 0; }
+  .msg .line { display: block; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>Heating</h1>
+      <h1>Heatmiser</h1>
       <div class="sub">Heatmiser Neo · natural-language control</div>
     </div>
-    <div class="sub" id="clock"></div>
+    <div class="header-right">
+      <button type="button" class="btn-standby" id="allStandby">All Standby</button>
+      <div class="sub" id="clock"></div>
+    </div>
   </header>
 
   <div class="zones" id="zones"></div>
 
   <div class="chat">
+    <div class="chat-head"><span>Assistant</span><button type="button" class="btn-clear" id="clear">Clear</button></div>
     <div class="log" id="log">
       <div class="msg bot">Hi - tell me what you'd like. Try "make the lounge a bit warmer" or "set everywhere to 20 for 2 hours".</div>
     </div>
@@ -104,14 +164,62 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal" hidden>
+  <div class="modal">
+    <div class="modal-msg" id="modalMsg"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost" id="modalCancel">Cancel</button>
+      <button type="button" class="btn-danger" id="modalOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 
+let zoneNames = [];
+
+const GREETING = `Hi - tell me what you'd like. Try "make the bedroom cooler" or "set everywhere to 22".`;
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Minimal markdown: **bold**, `code`, and - bullet lists.
+function renderMarkdown(text) {
+  const inline = (s) => escapeHtml(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  let html = "", inList = false;
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*[-*]\s+(.*)$/);
+    if (m) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += "<li>" + inline(m[1]) + "</li>";
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      html += line.trim() === "" ? "" : '<span class="line">' + inline(line) + "</span>";
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
 function renderZones(zones) {
+  zoneNames = zones.map((z) => z.name);
   $("zones").innerHTML = zones.map(z => {
     const off = z.standby;
-    const fan = z.fan ? (z.fan + (z.fan_auto ? " · Auto" : "")) : "—";
-    const target = off ? "Off" : z.target.toFixed(1) + "°C";
+    const MODES = ["Heating", "Cooling", "Vent", "Auto"];
+    const FANS = ["Auto", "High", "Medium", "Low", "Off"];
+    const fanCur = z.fan_auto ? "Auto"
+      : ({ Off: "Off", Low: "Low", Med: "Medium", Medium: "Medium", High: "High" }[z.fan] || "");
+    const targetCtl = off
+      ? "<b>Off</b>"
+      : `<span class="stepper">
+           <button class="step" data-act="target" data-zone="${z.name}" data-target="${z.target}" data-delta="-0.5">−</button>
+           <b>${z.target.toFixed(1)}°C</b>
+           <button class="step" data-act="target" data-zone="${z.name}" data-target="${z.target}" data-delta="0.5">+</button>
+         </span>`;
     return `
     <div class="zone ${z.active ? "active" : ""} ${(z.mode || "").toLowerCase()}">
       <div class="badges">
@@ -121,17 +229,64 @@ function renderZones(zones) {
       </div>
       <div class="name"><span class="dot"></span>${z.name}</div>
       <div class="temps"><div class="cur">${z.current.toFixed(1)}<span>°C</span></div></div>
-      <div class="tgt">Target <b>${target}</b></div>
+      <div class="tgt">Target ${targetCtl}</div>
       <div class="meta">
-        <div class="row"><span>Mode</span><b>${z.mode || "—"}</b></div>
-        <div class="row"><span>Fan</span><b>${fan}</b></div>
-        <div class="row"><span>Schedule</span><b>${z.schedule || "—"}</b></div>
+        <label class="row"><span>Mode</span>
+          <select class="ctl" data-act="mode" data-zone="${z.name}">
+            ${MODES.map(m => `<option ${m === z.mode ? "selected" : ""}>${m}</option>`).join("")}
+          </select>
+        </label>
+        <label class="row"><span>Fan</span>
+          <span class="fanwrap">
+            <select class="ctl" data-act="fan" data-zone="${z.name}">
+              ${FANS.map(f => `<option ${f === fanCur ? "selected" : ""}>${f}</option>`).join("")}
+            </select>
+            <span class="fan-mode ${z.fan_auto ? "auto" : "man"}">${z.fan_auto ? (z.fan || "Auto") : "Manual"}</span>
+          </span>
+        </label>
+      </div>
+      <div class="sched">
+        <div class="sched-head">Schedule ${z.sched_day ? "(" + z.sched_day + ")" : "(today)"} <span class="tag ${z.schedule_on ? "on" : "off"}">${z.schedule_on ? "on" : "off"}</span></div>
+        ${(z.periods && z.periods.length)
+          ? z.periods.map(p => `<div class="row"><span>${p.time}</span><b>${p.value}</b></div>`).join("")
+          : '<div class="none">No changes programmed</div>'}
       </div>
     </div>`;
   }).join("");
 }
 
+async function sendControl(action, zone, value) {
+  try {
+    const r = await fetch("/api/set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, zone, value }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "failed");
+    if (d.zones) renderZones(d.zones);
+  } catch (err) {
+    addMsg(`Couldn't set ${action} for ${zone}: ${err.message}`, "err");
+  }
+}
+
+$("zones").addEventListener("change", (e) => {
+  const el = e.target.closest("select.ctl");
+  if (el) sendControl(el.dataset.act, el.dataset.zone, el.value);
+});
+$("zones").addEventListener("click", (e) => {
+  const b = e.target.closest(".step");
+  if (b) sendControl("target", b.dataset.zone,
+    parseFloat(b.dataset.target) + parseFloat(b.dataset.delta));
+});
+
+function zonesBusy() {
+  const a = document.activeElement;
+  return !!(a && a.closest && a.closest("#zones"));
+}
+
 async function refresh() {
+  if (zonesBusy()) return;  // don't clobber a control mid-interaction
   try {
     const r = await fetch("/api/zones");
     const d = await r.json();
@@ -139,13 +294,19 @@ async function refresh() {
   } catch (e) { /* keep last render */ }
 }
 
-function addMsg(text, cls) {
+function addMsg(text, cls, html = false) {
   const el = document.createElement("div");
   el.className = "msg " + cls;
-  el.textContent = text;
+  if (html) el.innerHTML = renderMarkdown(text);
+  else el.textContent = text;
   $("log").appendChild(el);
   $("log").scrollTop = $("log").scrollHeight;
   return el;
+}
+
+function resetLog() {
+  $("log").innerHTML = "";
+  addMsg(GREETING, "bot");
 }
 
 $("form").addEventListener("submit", async (e) => {
@@ -164,7 +325,7 @@ $("form").addEventListener("submit", async (e) => {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || "request failed");
-    thinking.textContent = d.reply;
+    thinking.innerHTML = renderMarkdown(d.reply);
     if (d.zones) renderZones(d.zones);
   } catch (err) {
     thinking.remove();
@@ -175,11 +336,66 @@ $("form").addEventListener("submit", async (e) => {
   }
 });
 
+// Tab-completes the word before the cursor to a zone name (repeat Tab cycles matches).
+function applyCompletion(el, st) {
+  const name = st.matches[st.idx];
+  el.value = el.value.slice(0, st.start) + name + st.after;
+  const end = st.start + name.length;
+  el.setSelectionRange(end, end);
+  st.end = end;
+  st.snapshot = el.value;
+}
+
+let acState = null;
+$("input").addEventListener("keydown", (e) => {
+  if (e.key !== "Tab" || e.shiftKey) return;
+  const el = $("input");
+  if (el.selectionStart !== el.selectionEnd) return;
+  const pos = el.selectionStart;
+  if (acState && acState.end === pos && acState.snapshot === el.value && acState.matches.length > 1) {
+    e.preventDefault();
+    acState.idx = (acState.idx + 1) % acState.matches.length;
+    applyCompletion(el, acState);
+    return;
+  }
+  const m = el.value.slice(0, pos).match(/([A-Za-z]+)$/);
+  if (!m) return;
+  const frag = m[1].toLowerCase();
+  const matches = zoneNames.filter((n) => n.toLowerCase().startsWith(frag));
+  if (!matches.length) return;
+  e.preventDefault();
+  acState = { start: pos - m[1].length, after: el.value.slice(pos), matches, idx: 0 };
+  applyCompletion(el, acState);
+});
+
 function tick() {
   const now = new Date();
   $("clock").textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+$("clear").addEventListener("click", resetLog);
+function confirmModal(message) {
+  return new Promise((resolve) => {
+    $("modalMsg").textContent = message;
+    $("modal").hidden = false;
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    const done = (val) => {
+      $("modal").hidden = true;
+      $("modalOk").onclick = $("modalCancel").onclick = $("modal").onclick = null;
+      document.removeEventListener("keydown", onKey);
+      resolve(val);
+    };
+    $("modalOk").onclick = () => done(true);
+    $("modalCancel").onclick = () => done(false);
+    $("modal").onclick = (e) => { if (e.target === $("modal")) done(false); };
+    document.addEventListener("keydown", onKey);
+  });
+}
+
+$("allStandby").addEventListener("click", async () => {
+  if (await confirmModal("Put all zones into Standby?")) sendControl("away", "all", true);
+});
+resetLog();
 refresh();
 setInterval(refresh, 5000);
 tick();
