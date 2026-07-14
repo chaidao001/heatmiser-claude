@@ -54,6 +54,6 @@ heating commands (only the language understanding calls Claude).
 - `neohubapi` method names have shifted slightly across versions. `neohub.py` targets the
   2.x `get_live_data()` / `NeoStat` surface; if you hit an attribute error, check
   `pip show neohubapi` and adjust `NeoHubBackend`.
-- Safety clamp: targets are limited to 5-30 °C in `app.py`.
+- Safety clamp: targets are limited to 5-35 °C in `app.py` (>=30 reads as "off" for cooling).
 - Model is set by `CLAUDE_MODEL` (default `claude-sonnet-4-6`) - a good latency/cost fit
   for this short tool loop.

@@ -28,7 +28,7 @@
   h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
   .sub { color: var(--muted); font-size: 13px; }
 
-  .zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .zones { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
   .zone {
     background: var(--card);
     border: 1px solid var(--line);
@@ -61,6 +61,20 @@
   .sched .row { display: flex; justify-content: space-between; }
   .sched b { color: var(--text); font-weight: 600; }
   .sched .none { font-style: italic; }
+  .prow { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .prow input.time, .sched-add input.time {
+    background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 3px 6px; font: inherit; font-size: 13px; width: 58px;
+    flex: none; text-align: center; letter-spacing: .02em;
+  }
+  .prow input.time:focus, .sched-add input.time:focus { border-color: var(--accent); outline: none; }
+  .prow .stepper { margin-left: auto; }
+  .prow .step { width: 20px; height: 20px; font-size: 14px; }
+  .prow .pval { min-width: 42px; text-align: center; color: var(--text); font-weight: 600; }
+  .prow .x { background: transparent; border: 0; color: var(--muted); font-size: 16px;
+    line-height: 1; padding: 0; width: 18px; flex: none; text-align: center; cursor: pointer; }
+  .prow .x:hover { color: var(--accent); }
+  .sched-add { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); }
   .stepper { display: inline-flex; align-items: center; gap: 8px; }
   .step { background: var(--card-2); color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; width: 24px; height: 24px; padding: 0; font-size: 16px; line-height: 1;
@@ -70,6 +84,8 @@
   select.ctl { background: var(--bg); color: var(--text); border: 1px solid var(--line);
     border-radius: 8px; padding: 3px 6px; font-size: 12px; font-weight: 600; outline: none; cursor: pointer; }
   select.ctl:focus { border-color: var(--accent); }
+  select.ctl.target { font-size: 15px; }
+  select.ctl.target.off { color: var(--muted); }
   .fanwrap { display: inline-flex; align-items: center; gap: 8px; }
   .fan-mode { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
     padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
@@ -179,6 +195,10 @@ const $ = (id) => document.getElementById(id);
 
 let zoneNames = [];
 
+// Selectable target temperatures, 5-35 °C in 0.5 steps (as "21.5" strings).
+// The top of the range (>=30) is effectively "off" for cooling.
+const TEMPS = Array.from({ length: 61 }, (_, i) => (5 + i * 0.5).toFixed(1));
+
 const GREETING = `Hi - tell me what you'd like. Try "make the bedroom cooler" or "set everywhere to 22".`;
 
 function escapeHtml(s) {
@@ -213,13 +233,16 @@ function renderZones(zones) {
     const FANS = ["Auto", "High", "Medium", "Low", "Off"];
     const fanCur = z.fan_auto ? "Auto"
       : ({ Off: "Off", Low: "Low", Med: "Medium", Medium: "Medium", High: "High" }[z.fan] || "");
-    const targetCtl = off
-      ? "<b>Off</b>"
-      : `<span class="stepper">
-           <button class="step" data-act="target" data-zone="${z.name}" data-target="${z.target}" data-delta="-0.5">−</button>
-           <b>${z.target.toFixed(1)}°C</b>
-           <button class="step" data-act="target" data-zone="${z.name}" data-target="${z.target}" data-delta="0.5">+</button>
-         </span>`;
+    // A dropdown (not steppers) so the target is settable even when the zone is Off.
+    // Off / standby zones report a sentinel setpoint (e.g. cooling's 127.5) that isn't a
+    // real 5-30 value, so show an "Off" placeholder rather than defaulting to the first
+    // option - picking that would set an extreme target. Choosing a real temp sets it.
+    const hasSetpoint = z.target >= 5 && z.target <= 35;
+    const targetVal = hasSetpoint ? z.target.toFixed(1) : "";
+    const targetCtl = `<select class="ctl target${hasSetpoint ? "" : " off"}" data-act="target" data-zone="${z.name}">
+        ${hasSetpoint ? "" : '<option value="" selected>Off</option>'}
+        ${TEMPS.map(v => `<option value="${v}" ${v === targetVal ? "selected" : ""}>${v}°C</option>`).join("")}
+      </select>`;
     return `
     <div class="zone ${z.active ? "active" : ""} ${(z.mode || "").toLowerCase()}">
       <div class="badges">
@@ -238,18 +261,33 @@ function renderZones(zones) {
         </label>
         <label class="row"><span>Fan</span>
           <span class="fanwrap">
+            <span class="fan-mode ${z.fan_auto ? "auto" : "man"}">${z.fan_auto ? (z.fan || "Auto") : "Manual"}</span>
             <select class="ctl" data-act="fan" data-zone="${z.name}">
               ${FANS.map(f => `<option ${f === fanCur ? "selected" : ""}>${f}</option>`).join("")}
             </select>
-            <span class="fan-mode ${z.fan_auto ? "auto" : "man"}">${z.fan_auto ? (z.fan || "Auto") : "Manual"}</span>
           </span>
         </label>
       </div>
       <div class="sched">
         <div class="sched-head">Schedule ${z.sched_day ? "(" + z.sched_day + ")" : "(today)"} <span class="tag ${z.schedule_on ? "on" : "off"}">${z.schedule_on ? "on" : "off"}</span></div>
         ${(z.periods && z.periods.length)
-          ? z.periods.map(p => `<div class="row"><span>${p.time}</span><b>${p.value}</b></div>`).join("")
+          ? z.periods.map(p => {
+              const temp = (p.temp === null || p.temp === undefined) ? 20 : p.temp;
+              return `<div class="prow">
+                <input class="time" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${p.time}" data-act="schedule_move" data-zone="${z.name}" data-time="${p.time}" data-temp="${temp}">
+                <span class="stepper">
+                  <button class="step" data-act="schedule_period" data-zone="${z.name}" data-time="${p.time}" data-target="${temp}" data-delta="-0.5">−</button>
+                  <span class="pval">${p.value}</span>
+                  <button class="step" data-act="schedule_period" data-zone="${z.name}" data-time="${p.time}" data-target="${temp}" data-delta="0.5">+</button>
+                </span>
+                <button class="x" title="Remove period" data-act="schedule_clear" data-zone="${z.name}" data-time="${p.time}">×</button>
+              </div>`;
+            }).join("")
           : '<div class="none">No changes programmed</div>'}
+        <label class="sched-add">
+          <input class="time" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="" data-act="schedule_add" data-zone="${z.name}">
+          <span>add period</span>
+        </label>
       </div>
     </div>`;
   }).join("");
@@ -270,14 +308,66 @@ async function sendControl(action, zone, value) {
   }
 }
 
+const clampTemp = (v) => Math.max(5, Math.min(30, v));
+
+// Accept "7:30" or "07:30", return zero-padded "HH:MM", or null if invalid.
+function normalizeTime(v) {
+  const m = String(v).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = +m[1], mi = +m[2];
+  if (h > 23 || mi > 59) return null;
+  return String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0");
+}
+
+// Moving a period = drop it at its old time, re-add it at the new one.
+async function moveSchedulePeriod(zone, oldTime, newTime, temp) {
+  try {
+    await fetch("/api/set", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "schedule_clear", zone, value: { time: oldTime } }),
+    });
+    const r = await fetch("/api/set", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "schedule_period", zone, value: { time: newTime, target_c: temp } }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "failed");
+    if (d.zones) renderZones(d.zones);
+  } catch (err) {
+    addMsg(`Couldn't move the ${zone} period: ${err.message}`, "err");
+  }
+}
+
 $("zones").addEventListener("change", (e) => {
-  const el = e.target.closest("select.ctl");
-  if (el) sendControl(el.dataset.act, el.dataset.zone, el.value);
+  const sel = e.target.closest("select.ctl");
+  if (sel) {
+    if (sel.value !== "") sendControl(sel.dataset.act, sel.dataset.zone, sel.value);
+    return;
+  }
+  const t = e.target.closest("input.time");
+  if (t && t.value) {
+    const time = normalizeTime(t.value);
+    if (!time) { addMsg(`"${t.value}" isn't a valid time - use HH:MM (e.g. 07:30).`, "err"); return; }
+    if (t.dataset.act === "schedule_add") {
+      sendControl("schedule_period", t.dataset.zone, { time, target_c: 20 });
+    } else if (t.dataset.act === "schedule_move" && time !== t.dataset.time) {
+      const temp = parseFloat(t.dataset.temp);
+      moveSchedulePeriod(t.dataset.zone, t.dataset.time, time, isNaN(temp) ? 20 : temp);
+    }
+  }
 });
 $("zones").addEventListener("click", (e) => {
-  const b = e.target.closest(".step");
-  if (b) sendControl("target", b.dataset.zone,
-    parseFloat(b.dataset.target) + parseFloat(b.dataset.delta));
+  const step = e.target.closest(".step");
+  if (step) {
+    const val = clampTemp(parseFloat(step.dataset.target) + parseFloat(step.dataset.delta));
+    if (step.dataset.act === "schedule_period")
+      sendControl("schedule_period", step.dataset.zone, { time: step.dataset.time, target_c: val });
+    else
+      sendControl("target", step.dataset.zone, val);
+    return;
+  }
+  const x = e.target.closest(".x");
+  if (x) { sendControl("schedule_clear", x.dataset.zone, { time: x.dataset.time }); return; }
 });
 
 function zonesBusy() {
@@ -337,10 +427,11 @@ $("form").addEventListener("submit", async (e) => {
 });
 
 // Tab-completes the word before the cursor to a zone name (repeat Tab cycles matches).
+// A trailing space is added so you can keep typing the rest of the sentence.
 function applyCompletion(el, st) {
-  const name = st.matches[st.idx];
-  el.value = el.value.slice(0, st.start) + name + st.after;
-  const end = st.start + name.length;
+  const insert = st.matches[st.idx] + " ";
+  el.value = el.value.slice(0, st.start) + insert + st.after;
+  const end = st.start + insert.length;
   el.setSelectionRange(end, end);
   st.end = end;
   st.snapshot = el.value;

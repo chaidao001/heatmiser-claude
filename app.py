@@ -6,6 +6,7 @@ Run:  uvicorn app:app --reload  (then open http://127.0.0.1:8000)
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,20 @@ load_dotenv(Path(__file__).parent / "conf" / ".env")
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 STATIC = Path(__file__).parent / "static"
+
+# Log every control operation to the console. Backend writes to the hub don't
+# always "take" (e.g. a setpoint is ignored while a zone is in standby), and the
+# only way to see that after the fact is a trace of what was sent and how the hub
+# responded. Set HEATMISER_LOG_LEVEL=DEBUG for before/after zone snapshots.
+# A dedicated handler (not propagating to root) keeps our lines readable next to
+# uvicorn's own logging.
+LOG = logging.getLogger("heatmiser")
+if not LOG.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    LOG.addHandler(_handler)
+    LOG.propagate = False
+LOG.setLevel(os.getenv("HEATMISER_LOG_LEVEL", "INFO").upper())
 
 app = FastAPI(title="Heatmiser + Claude")
 # make_backend() reads NEOHUB_TOKEN (and host/port) from the environment, which
@@ -45,7 +60,17 @@ Guidelines:
   target. Refer to the system as heating or cooling according to the zone's mode.
 - You can also change fan speed (set_fan_speed: Auto/High/Medium/Low/Off), heating/cooling
   mode (set_mode: Heating/Cooling/Vent/Auto), and turn a zone's schedule on or off
-  (set_schedule). Editing the schedule's times/temperatures is not supported.
+  (set_schedule).
+- You can edit the schedule itself: set_schedule_period sets (or adds) the programmed
+  target at a given time of day, keeping the rest of the schedule; clear_schedule_period
+  removes the period at a time. Times are 24-hour "HH:MM" (interpret "3am" as "03:00",
+  "half seven"/"7:30pm" as "19:30", etc.). Changes apply to the whole weekly program
+  (this hub runs one schedule for every day). Use these for lasting schedule changes;
+  use hold_temperature for a temporary override that reverts to the schedule.
+- To turn the schedule "off" at a time (system does not heat or cool from then), call
+  set_schedule_period with off=true - never pass a low temperature to mean off. Remember a
+  zone in Cooling mode cools DOWN to its target, so a LOW target means MORE cooling; a low
+  number is the opposite of off. "Remove"/"delete" a period means clear_schedule_period.
 - After acting, reply in one or two short, friendly sentences stating what you changed
   and the new target(s). Do not invent zones or values you did not get from a tool.
 """
@@ -68,7 +93,7 @@ TOOLS = [
                     "items": {"type": "string"},
                     "description": 'Zone names, or ["all"] for every zone.',
                 },
-                "target_c": {"type": "number", "description": "Target temperature in Celsius (5-30)."},
+                "target_c": {"type": "number", "description": "Target temperature in Celsius (5-35; >=30 is effectively off for cooling)."},
             },
             "required": ["zones", "target_c"],
         },
@@ -127,7 +152,7 @@ TOOLS = [
     {
         "name": "set_schedule",
         "description": "Turn a zone's time schedule on (follow its program) or off (manual). "
-        "Editing the schedule's times/temperatures is not supported - only on/off.",
+        "This is the on/off switch only; use set_schedule_period to change the times/temperatures.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -137,15 +162,49 @@ TOOLS = [
             "required": ["zones", "enable"],
         },
     },
+    {
+        "name": "set_schedule_period",
+        "description": "Set or add a programmed schedule period: at the given time of day, the "
+        "zone's target becomes target_c (or, with off=true, the system is off - no heating/cooling "
+        "from that time). Existing period at that time is updated; otherwise a new one is added. "
+        "The rest of the schedule is preserved. Applies to the whole weekly program. Use this for "
+        "lasting changes (not a temporary hold). To turn a period off, pass off=true - do NOT pass a "
+        "low temperature (in cooling a low target means maximum cooling, the opposite of off).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zones": {"type": "array", "items": {"type": "string"}},
+                "time": {"type": "string", "description": '24-hour time of day, "HH:MM" (e.g. "03:00").'},
+                "target_c": {"type": "number", "description": "Target temperature in Celsius (5-30). Omit when off=true."},
+                "off": {"type": "boolean", "description": "If true, the period is off (no heating/cooling) instead of a temperature."},
+            },
+            "required": ["zones", "time"],
+        },
+    },
+    {
+        "name": "clear_schedule_period",
+        "description": "Remove the programmed schedule period at the given time of day, keeping "
+        "the rest of the schedule.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "zones": {"type": "array", "items": {"type": "string"}},
+                "time": {"type": "string", "description": '24-hour time of day, "HH:MM".'},
+            },
+            "required": ["zones", "time"],
+        },
+    },
 ]
 
 
 async def dispatch(name: str, args: dict) -> dict:
     """Execute a Claude tool call against the heating backend."""
+    if name != "list_zones":
+        LOG.info("Claude tool %s args=%s", name, dict(args))
     if name == "list_zones":
         return {"zones": [z.as_dict() for z in await backend.list_zones()]}
     if name == "set_temperature":
-        target = max(5.0, min(30.0, float(args["target_c"])))
+        target = max(5.0, min(35.0, float(args["target_c"])))
         changed = await backend.set_temperature(args["zones"], target)
         return {"changed": changed, "target_c": target}
     if name == "hold_temperature":
@@ -166,6 +225,16 @@ async def dispatch(name: str, args: dict) -> dict:
     if name == "set_schedule":
         changed = await backend.set_schedule(args["zones"], bool(args["enable"]))
         return {"changed": changed, "schedule_on": bool(args["enable"])}
+    if name == "set_schedule_period":
+        if args.get("off"):
+            changed = await backend.set_schedule_period(args["zones"], str(args["time"]), off=True)
+            return {"changed": changed, "time": str(args["time"]), "off": True}
+        target = max(5.0, min(30.0, float(args["target_c"])))
+        changed = await backend.set_schedule_period(args["zones"], str(args["time"]), target)
+        return {"changed": changed, "time": str(args["time"]), "target_c": target}
+    if name == "clear_schedule_period":
+        changed = await backend.clear_schedule_period(args["zones"], str(args["time"]))
+        return {"changed": changed, "time": str(args["time"])}
     return {"error": f"unknown tool {name}"}
 
 
@@ -187,10 +256,11 @@ class SetIn(BaseModel):
 @app.post("/api/set")
 async def set_control(body: SetIn):
     """Direct control from the dashboard widgets - one zone, one property."""
+    LOG.info("UI /api/set action=%s zone=%s value=%r", body.action, body.zone, body.value)
     zones = [body.zone]
     try:
         if body.action == "target":
-            await backend.set_temperature(zones, max(5.0, min(30.0, float(body.value))))
+            await backend.set_temperature(zones, max(5.0, min(35.0, float(body.value))))
         elif body.action == "mode":
             await backend.set_mode(zones, str(body.value))
         elif body.action == "fan":
@@ -199,9 +269,16 @@ async def set_control(body: SetIn):
             await backend.set_away(zones, bool(body.value))
         elif body.action == "schedule":
             await backend.set_schedule(zones, bool(body.value))
+        elif body.action == "schedule_period":
+            await backend.set_schedule_period(
+                zones, str(body.value["time"]), float(body.value["target_c"])
+            )
+        elif body.action == "schedule_clear":
+            await backend.clear_schedule_period(zones, str(body.value["time"]))
         else:
             return {"ok": False, "error": f"unknown action {body.action}"}
     except Exception as e:
+        LOG.exception("UI /api/set failed action=%s zone=%s", body.action, body.zone)
         return {"ok": False, "error": str(e)}
     return {"ok": True, "zones": [z.as_dict() for z in await backend.list_zones()]}
 
